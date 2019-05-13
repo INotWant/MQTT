@@ -2,7 +2,9 @@ package mqtt.entity;
 
 import io.netty.channel.Channel;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -33,6 +35,8 @@ public final class Session {
     private long lastReqTime;
     // 未确认的消息（在重新连接后可能重传的消息） --> key: 报文标识符; value: 对应的消息
     private Map<Integer, News> unconfirmedMessages = new HashMap<>();
+    // 当保留会话状态时，在连接断开期间，此会话订阅匹配的消息（即恢复连接后将要传送给客户端的 Qos1 和 Qos2 消息）
+    private List<News> unsentMessages = new ArrayList<>();
 
     public String getClientId() {
         return clientId;
@@ -132,5 +136,13 @@ public final class Session {
 
     public Map<Integer, News> getUnconfirmedMessages() {
         return unconfirmedMessages;
+    }
+
+    public List<News> getUnsentMessages() {
+        return unsentMessages;
+    }
+
+    public void addUnsentMessage(News news) {
+        unsentMessages.add(news);
     }
 }

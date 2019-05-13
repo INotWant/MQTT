@@ -1,8 +1,10 @@
 package logic;
 
+import config.MqttConfig;
 import exception.IllegalStateException;
 import exception.MessageFormatException;
 import exception.UnknownControlTypeException;
+import jdk.nashorn.internal.runtime.regexp.joni.Config;
 import protocol.*;
 import tool.ByteUtil;
 import tool.OtherUtil;
@@ -68,6 +70,10 @@ public final class ParseMessage {
         connectVH.setProtocolName(ByteUtil.getStringFromBytes(bytes, index, protocolLen));
         index += protocolLen;
         connectVH.setLevel(bytes[index]);
+        // TODO 假设向下兼容
+        if (connectVH.getLevel() > MqttConfig.PROTOCOL_LEVEL)
+            throw new IllegalStateException("Unsupported protocol level!",
+                    IllegalStateException.ILLEGAL_PROTOCOL_LEVEL);
         index += 1;
         connectVH.setUserNameFlag(ByteUtil.getSpecialBinaryBit(bytes[index], 7) == 1);
         connectVH.setPassWordFlag(ByteUtil.getSpecialBinaryBit(bytes[index], 6) == 1);

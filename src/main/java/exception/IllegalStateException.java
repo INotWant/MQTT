@@ -7,8 +7,11 @@ package exception;
  */
 public class IllegalStateException extends Exception {
 
+    public final static int ILLEGAL_PROTOCOL_LEVEL = 0x01;
     public final static int ILLEGAL_CLIENT_ID = 0x02;
-    public final static int ILLEGAL_USERNAME_PASSWORD_FLAG = 0x10;
+    public final static int ILLEGAL_BROKER_UNAVAILABLE = 0x03;
+    public final static int ILLEGAL_USERNAME_PASSWORD_FLAG = 0x04;
+    public final static int ILLEGAL_UNAUTHORIZED = 0x05;
 
     private int errorno;
 

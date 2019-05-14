@@ -17,18 +17,15 @@ public final class Session {
     private String clientId;
     // 协议级别
     private int level;
-    private boolean userNameFlag;
-    private boolean passWordFlag;
-    private boolean willFlag;
     // false 不清理会话， True 时清理
     private boolean cleanSessionFlag;
     private int keepAlive;
 
-    private String userName;
-    private String passWord;
+    private String userName = null;
+    private String passWord = null;
 
     // 遗嘱
-    private Will will;
+    private Will will = null;
     // 用于与客户端通信
     private Channel channel;
     // 上一次请求时间
@@ -37,6 +34,8 @@ public final class Session {
     private Map<Integer, News> unconfirmedMessages = new HashMap<>();
     // 当保留会话状态时，在连接断开期间，此会话订阅匹配的消息（即恢复连接后将要传送给客户端的 Qos1 和 Qos2 消息）
     private List<News> unsentMessages = new ArrayList<>();
+    // 所有的订阅信息：key： topic filter， value： qos
+    private Map<String, Integer> subscribes = new HashMap<>();
 
     public String getClientId() {
         return clientId;
@@ -52,30 +51,6 @@ public final class Session {
 
     public void setLevel(int level) {
         this.level = level;
-    }
-
-    public boolean isUserNameFlag() {
-        return userNameFlag;
-    }
-
-    public void setUserNameFlag(boolean userNameFlag) {
-        this.userNameFlag = userNameFlag;
-    }
-
-    public boolean isPassWordFlag() {
-        return passWordFlag;
-    }
-
-    public void setPassWordFlag(boolean passWordFlag) {
-        this.passWordFlag = passWordFlag;
-    }
-
-    public boolean isWillFlag() {
-        return willFlag;
-    }
-
-    public void setWillFlag(boolean willFlag) {
-        this.willFlag = willFlag;
     }
 
     public boolean isCleanSessionFlag() {
@@ -144,5 +119,17 @@ public final class Session {
 
     public void addUnsentMessage(News news) {
         unsentMessages.add(news);
+    }
+
+    public Map<String, Integer> getSubscribes() {
+        return subscribes;
+    }
+
+    public void addSubscribe(String topicFilter, int qos){
+        this.subscribes.put(topicFilter, qos);
+    }
+
+    public void removeSubscribe(String topicFilter){
+        this.subscribes.remove(topicFilter);
     }
 }

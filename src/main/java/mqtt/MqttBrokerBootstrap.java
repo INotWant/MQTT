@@ -1,5 +1,7 @@
 package mqtt;
 
+import io.netty.util.internal.logging.InternalLoggerFactory;
+import io.netty.util.internal.logging.Log4JLoggerFactory;
 import mqtt.entity.Session;
 
 import java.util.Map;
@@ -16,6 +18,8 @@ public class MqttBrokerBootstrap {
     public static Map<String, Session> sessions = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
+        // 设置日志
+        InternalLoggerFactory.setDefaultFactory(Log4JLoggerFactory.INSTANCE);
     }
 
 }

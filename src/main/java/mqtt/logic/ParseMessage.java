@@ -1,13 +1,11 @@
 package mqtt.logic;
 
-import mqtt.MqttBrokerBootstrap;
 import mqtt.MqttConfig;
 import mqtt.exception.IllegalStateException;
 import mqtt.exception.MessageFormatException;
 import mqtt.exception.UnknownControlTypeException;
 import mqtt.protocol.*;
 import mqtt.tool.ByteUtil;
-import mqtt.tool.OtherUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,7 +18,7 @@ import java.util.List;
 public final class ParseMessage {
 
     /**
-     * 解析报文并填充 {@link Message}
+     * 解析报文并填充 {@link Message} --> 拆包
      *
      * @param message 将解析的结果填充至该实例
      * @param bytes   报文字节流

@@ -37,6 +37,23 @@ public final class ByteUtil {
     }
 
     /**
+     * 将 remainLength 转为二进制形式
+     *
+     * @param remainLength remainLength
+     * @return remainLength 对应的二进制形式
+     */
+    public static byte[] remainLengthToBytes(int remainLength) {
+        int len = getRemainLengthLen(remainLength);
+        byte[] bytes = new byte[len];
+        for (int i = 0; i < bytes.length - 1; i++) {
+            bytes[i] = (byte) ((remainLength & 0x0000007f) + 0x80);
+            remainLength >>= 7;
+        }
+        bytes[len - 1] = (byte) remainLength;
+        return bytes;
+    }
+
+    /**
      * h获取 remain length 字段的长度
      */
     public static int getRemainLengthLen(int remainLength) {

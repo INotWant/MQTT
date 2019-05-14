@@ -9,5 +9,7 @@ public final class MqttConfig {
 
     // 默认支持的协议等级
     public static int PROTOCOL_LEVEL = 0x04;
+    // 默认 KeepAlive 时间
+    public static int DEFAULT_KEEP_ALIVE = 100;
 
 }

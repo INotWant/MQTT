@@ -18,7 +18,7 @@ import static mqtt.logic.ParseMessage.parseMessage;
  * @date 19-5-12 09:28
  * @desc 将字节流解析为 Message
  */
-public class BytesToMessageDecoder extends ByteToMessageDecoder {
+public class MqttBytesToMessageDecoder extends ByteToMessageDecoder {
 
     private int remainLength = -1;
     private Message message = null;

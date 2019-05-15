@@ -147,4 +147,50 @@ public class OtherUtilTest {
         Assert.assertArrayEquals(words, OtherUtil.splitTopicFilter(topicFilter));
     }
 
+    @Test
+    public void topicMatchTopicFilterTest() {
+        String topicName;
+        String topicFilter;
+
+        topicName = "";
+        topicFilter = "";
+        Assert.assertFalse(OtherUtil.topicMatchTopicFilter(topicName, topicFilter));
+
+        topicName = "中国";
+        topicFilter = "#";
+        Assert.assertTrue(OtherUtil.topicMatchTopicFilter(topicName, topicFilter));
+
+        topicName = "/中国/山东";
+        topicFilter = "#";
+        Assert.assertTrue(OtherUtil.topicMatchTopicFilter(topicName, topicFilter));
+
+        topicName = "/中国";
+        topicFilter = "/+";
+        Assert.assertTrue(OtherUtil.topicMatchTopicFilter(topicName, topicFilter));
+
+        topicName = "/中国/山东";
+        topicFilter = "+/+/#";
+        Assert.assertTrue(OtherUtil.topicMatchTopicFilter(topicName, topicFilter));
+
+        topicName = "/中国/山东/济南";
+        topicFilter = "+/+/#";
+        Assert.assertTrue(OtherUtil.topicMatchTopicFilter(topicName, topicFilter));
+
+        topicName = "/中国/山东/济南";
+        topicFilter = "/中国/山东/济南/";
+        Assert.assertFalse(OtherUtil.topicMatchTopicFilter(topicName, topicFilter));
+
+        topicName = "/中国/山东/济南";
+        topicFilter = "/中国/山东/济南/#";
+        Assert.assertTrue(OtherUtil.topicMatchTopicFilter(topicName, topicFilter));
+
+        topicName = "/中国/山东/济南";
+        topicFilter = "/中国/山东/济南/县城";
+        Assert.assertFalse(OtherUtil.topicMatchTopicFilter(topicName, topicFilter));
+
+        topicName = "/中国/山东/济南";
+        topicFilter = "/中国/山东/济南";
+        Assert.assertTrue(OtherUtil.topicMatchTopicFilter(topicName, topicFilter));
+    }
+
 }

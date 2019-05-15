@@ -1,10 +1,9 @@
 package mqtt.entity;
 
 import io.netty.channel.Channel;
+import mqtt.tool.Pair;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -31,9 +30,15 @@ public final class Session {
     // 上一次请求时间
     private long lastReqTime;
     // 未确认的消息（在重新连接后可能重传的消息） --> key: 报文标识符; value: 对应的消息
+    // qos2 的确认未完成，作为接受者
     private Map<Integer, News> unconfirmedMessages = new HashMap<>();
+    // 作为发送者，未确认的 qos 1 和 qos 2 级别的消息
+    // 注意：与 unconfirmedMessages 的区别
+    // key --> messageId, value --> news & qos
+    private Map<Integer, Pair<News, Integer>> unconfirmedMessagesForSender = new HashMap<>();
     // 当保留会话状态时，在连接断开期间，此会话订阅匹配的消息（即恢复连接后将要传送给客户端的 Qos1 和 Qos2 消息）
-    private List<News> unsentMessages = new ArrayList<>();
+    // key --> news, value --> qos
+    private Map<News, Integer> unsentMessages = new HashMap<>();
     // 所有的订阅信息：key： topic filter， value： qos
     private Map<String, Integer> subscribes = new HashMap<>();
 
@@ -113,23 +118,52 @@ public final class Session {
         return unconfirmedMessages;
     }
 
-    public List<News> getUnsentMessages() {
-        return unsentMessages;
+    public void removeUnconfirmedMessage(int messageId) {
+        this.unconfirmedMessages.remove(messageId);
     }
 
-    public void addUnsentMessage(News news) {
-        unsentMessages.add(news);
+    public News getUnconfirmedMessage(int messageId) {
+        return this.unconfirmedMessages.get(messageId);
+    }
+
+    public void addUnconfirmedMessage(int messageId, News news) {
+        this.unconfirmedMessages.put(messageId, news);
+    }
+
+    public Map<Integer, Pair<News, Integer>> getUnconfirmedMessagesForSender() {
+        return unconfirmedMessagesForSender;
+    }
+
+    public News getUnconfirmedMessageForSender(int messageId) {
+        return this.unconfirmedMessagesForSender.get(messageId).getF();
+    }
+
+    public void addUnconfirmedMessageForSender(int messageId, News news, int qos) {
+        this.unconfirmedMessagesForSender.put(messageId, new Pair<>(news, qos));
+    }
+
+    public void removeUnconfirmedMessageForSender(int messageId) {
+        this.unconfirmedMessagesForSender.remove(messageId);
+    }
+
+
+    public Map<News, Integer> getUnsentMessages() {
+        return this.unsentMessages;
+    }
+
+    public void addUnsentMessage(News news, int qos) {
+        unsentMessages.put(news, qos);
     }
 
     public Map<String, Integer> getSubscribes() {
         return subscribes;
     }
 
-    public void addSubscribe(String topicFilter, int qos){
+    public void addSubscribe(String topicFilter, int qos) {
         this.subscribes.put(topicFilter, qos);
     }
 
-    public void removeSubscribe(String topicFilter){
+    public void removeSubscribe(String topicFilter) {
         this.subscribes.remove(topicFilter);
     }
 }

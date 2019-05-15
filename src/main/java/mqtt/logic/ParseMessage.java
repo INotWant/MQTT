@@ -68,7 +68,7 @@ public final class ParseMessage {
         connectVH.setProtocolName(ByteUtil.getStringFromBytes(bytes, index, protocolLen));
         index += protocolLen;
         connectVH.setLevel(bytes[index]);
-        // TODO 假设向下兼容
+        // level --> 假设向下兼容
         if (connectVH.getLevel() > MqttConfig.PROTOCOL_LEVEL)
             throw new IllegalStateException("Unsupported mqtt.protocol level!",
                     IllegalStateException.ILLEGAL_PROTOCOL_LEVEL);

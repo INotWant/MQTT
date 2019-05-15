@@ -93,4 +93,35 @@ public final class OtherUtil {
         return result;
     }
 
+    /**
+     * 判断 topic name 与 topic filter 是否匹配
+     *
+     * @param topicName   topic name
+     * @param topicFilter topic filter
+     * @return true or false
+     */
+    public static boolean topicMatchTopicFilter(String topicName, String topicFilter) {
+        String[] wordsForName = splitTopicFilter(topicName);
+        String[] wordsForFilter = splitTopicFilter(topicFilter);
+        if (wordsForName == null || wordsForFilter == null)
+            return false;
+        if (wordsForFilter.length > wordsForName.length) {
+            if (wordsForFilter.length - 1 == wordsForName.length && !wordsForFilter[wordsForFilter.length - 1].equals("#"))
+                return false;
+            else if (wordsForFilter.length - 1 != wordsForName.length)
+                return false;
+        }
+        for (int i = 0; i < wordsForName.length; i++) {
+            if (i >= wordsForFilter.length)
+                return false;
+            if (wordsForFilter[i].equals("#"))
+                return true;
+            if (wordsForFilter[i].equals("+"))
+                continue;
+            if (!wordsForFilter[i].equals(wordsForName[i]))
+                return false;
+        }
+        return true;
+    }
+
 }

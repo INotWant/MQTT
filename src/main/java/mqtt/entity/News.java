@@ -9,9 +9,15 @@ import java.util.List;
  */
 public final class News {
 
-    private String topic;
-    private List<Byte> content;
-    private int qos;
+    /*
+     * 设计为线程安全的类：
+     * 构造完成后不允许发生改变！
+     */
+
+    private final String topic;
+    private final List<Byte> content;
+    // 注意仅为服务器接受到此消息时对应的服务质量
+    private final int qos;
 
     public News(String topic, List<Byte> content, int qos) {
         this.topic = topic;
@@ -23,23 +29,12 @@ public final class News {
         return topic;
     }
 
-    public void setTopic(String topic) {
-        this.topic = topic;
-    }
-
     public List<Byte> getContent() {
         return content;
-    }
-
-    public void setContent(List<Byte> content) {
-        this.content = content;
     }
 
     public int getQos() {
         return qos;
     }
 
-    public void setQos(int qos) {
-        this.qos = qos;
-    }
 }

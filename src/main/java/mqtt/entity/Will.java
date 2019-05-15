@@ -9,9 +9,14 @@ import java.util.List;
  */
 public final class Will {
 
-    private News willNews;
+    /*
+     * 设计为线程安全类：
+     * 在初始化完成后不发生改变！
+     */
+
+    private final News willNews;
     // 保留消息标志
-    private boolean retainFlag;
+    private final boolean retainFlag;
 
     public Will(boolean retainFlag, String topic, List<Byte> content, int qos) {
         this.retainFlag = retainFlag;
@@ -22,15 +27,8 @@ public final class Will {
         return willNews;
     }
 
-    public void setWillNews(News willNews) {
-        this.willNews = willNews;
-    }
-
     public boolean isRetainFlag() {
         return retainFlag;
     }
 
-    public void setRetainFlag(boolean retainFlag) {
-        this.retainFlag = retainFlag;
-    }
 }

@@ -2,11 +2,13 @@ package mqtt;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 import io.netty.util.internal.logging.Log4JLoggerFactory;
 import mqtt.entity.News;
@@ -26,6 +28,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class MqttBrokerBootstrap {
 
+    private static final InternalLogger log = InternalLoggerFactory.getInstance(MqttBrokerBootstrap.class);
+
     // 含有所有的当下存活 or 未清理 的 session
     public static Map<String, Session> sessions = new ConcurrentHashMap<>();
     // 保留消息集：key -> topic name; value -> news
@@ -41,6 +45,7 @@ public class MqttBrokerBootstrap {
         ConfUtil.setting(MqttConfig.class);
         ConfUtil.close();
         // 启动 broker
+        log.info("Start to bootstrap broker...");
         NioEventLoopGroup nioEventLoopGroup = new NioEventLoopGroup();
         ServerBootstrap serverBootstrap = new ServerBootstrap();
         try {
@@ -59,8 +64,10 @@ public class MqttBrokerBootstrap {
                         }
                     });
             // 绑定 IP & port
-            ChannelFuture f = serverBootstrap.bind(MqttConfig.IP, MqttConfig.PORT).sync();
-            f.channel().closeFuture().sync();
+            ChannelFuture f = serverBootstrap.bind(MqttConfig.IP, MqttConfig.PORT).sync().
+                    addListener((ChannelFutureListener) future -> log.info("Bind successfully!"));
+            f.channel().closeFuture().sync().
+                    addListener((ChannelFutureListener) future -> log.info("Close broker successfully!"));
         } finally {
             nioEventLoopGroup.shutdownGracefully().sync();
         }

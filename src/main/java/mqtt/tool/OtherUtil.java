@@ -124,4 +124,21 @@ public final class OtherUtil {
         return true;
     }
 
+    /**
+     * 将 {@link List} 表示成 String
+     *
+     * @param list list
+     */
+    public static String listToString(List list) {
+        if (list == null)
+            return "null";
+        StringBuilder stringBuilder = new StringBuilder();
+        for (int i = 0; i < list.size(); i++) {
+            stringBuilder.append(list.get(i).toString());
+            if (i != list.size() - 1)
+                stringBuilder.append(" ");
+        }
+        return stringBuilder.toString();
+    }
+
 }

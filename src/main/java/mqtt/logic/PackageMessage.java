@@ -1,8 +1,6 @@
 package mqtt.logic;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.util.internal.logging.InternalLogger;
-import io.netty.util.internal.logging.InternalLoggerFactory;
 import mqtt.exception.UnknownControlTypeException;
 import mqtt.protocol.*;
 import mqtt.tool.ByteUtil;
@@ -15,8 +13,6 @@ import java.nio.charset.Charset;
  * @desc 打包报文类
  */
 public final class PackageMessage {
-
-    private static final InternalLogger log = InternalLoggerFactory.getInstance(PackageMessage.class);
 
     /**
      * 封包 {@link Message}

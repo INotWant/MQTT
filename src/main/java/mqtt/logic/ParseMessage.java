@@ -259,7 +259,9 @@ public final class ParseMessage {
     /*
      * 解析 DISCONNECT 报文
      */
-    private static void parseDisconnect(Message message, byte[] bytes) {
+    private static void parseDisconnect(Message message, byte[] bytes) throws MessageFormatException {
         assert message.getRemainLength() == 0;
+        if (message.getFlag() != 0x00)
+            throw new MessageFormatException("disconnect message's fixed header,flag error");
     }
 }

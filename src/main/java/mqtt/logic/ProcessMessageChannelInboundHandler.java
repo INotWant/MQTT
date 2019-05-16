@@ -15,6 +15,7 @@ import mqtt.protocol.*;
 import mqtt.tool.OtherUtil;
 import mqtt.tool.Pair;
 
+import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -23,13 +24,13 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import static mqtt.MqttConfig.KEEP_ALIVE;
+import static mqtt.protocol.ControlType.CONTROL_TYPE_NAMES;
 
 /**
  * @author iwant
  * @date 19-5-13 08:30
  * @desc 处理 Message 逻辑
  */
-// TODO 日志输出
 public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHandler<Message> {
 
     private static final InternalLogger log = InternalLoggerFactory.getInstance(ProcessMessageChannelInboundHandler.class);
@@ -98,6 +99,7 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
             );
         } else if (cause instanceof IllegalStateException) {
             IllegalStateException exp = (IllegalStateException) cause;
+            log.info(String.format("Send a connack, error:%x!", exp.getErrorno()));
             ctx.writeAndFlush(generateConnackMessage(0, exp.getErrorno())).
                     addListener((ChannelFutureListener) future -> ctx.close().addListener((ChannelFutureListener) f ->
                             log.error(String.format("Close, because of illegal state: %x!", exp.getErrorno()))));
@@ -139,12 +141,21 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         ConnectPayload connectPayload = (ConnectPayload) msg.getPayload();
         Session session = null;
 
+        log.info(String.format("Get a connect, username:%s, clientId:%s, isCleanSession:%s, keepAlive:%d!",
+                connectPayload.getUserName(), connectPayload.getClientId(),
+                connectVH.isCleanSessionFlag(), connectVH.getKeepAlive()));
+
         int sp = 0;
         if (!connectVH.isCleanSessionFlag()) {
             // 恢复原有会话
             session = MqttBrokerBootstrap.sessions.get(connectPayload.getClientId());
-            if (session != null)
+            if (session != null) {
+                log.info(String.format("Resume session success, username:%s, clientId:%s!", connectPayload.getUserName(),
+                        connectPayload.getClientId()));
                 sp = 1;
+            } else
+                log.info(String.format("Resume session fail, username:%s, clientId:%s!", connectPayload.getUserName(),
+                        connectPayload.getClientId()));
         } else if (!"".equals(connectPayload.getClientId()))
             // 清理原有会话
             MqttBrokerBootstrap.sessions.remove(connectPayload.getClientId());
@@ -191,6 +202,9 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
                 clientId = OtherUtil.generateClientId();
                 session.setClientId(clientId);
             } while (MqttBrokerBootstrap.sessions.putIfAbsent(clientId, session) != null);
+            InetSocketAddress remoteAddress = (InetSocketAddress) session.getChannel().remoteAddress();
+            log.info(String.format("Generate clientId, username:%s, clientId:%s, ip:%s, port:%s!", connectPayload.getUserName(),
+                    session.getClientId(), remoteAddress.getHostString(), remoteAddress.getPort()));
         } else {
             /* 进入此的情况：
              * 1）清理会话（无需服务端生成客户端标识符）--> putIfAbsent 成功
@@ -207,22 +221,34 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
 
         // 生成并发送 CONNACK 响应
         Message connackMessage = generateConnackMessage(sp, 0x00);
+        log.info(String.format("Send a connack, username:%s, clientId:%s!",
+                this.session.getUserName(), this.session.getClientId()));
         ctx.writeAndFlush(connackMessage);
 
+        Map<Integer, News> unconfirmedMessages = this.session.getUnconfirmedMessages();
+        Map<Integer, Pair<News, Integer>> unconfirmedMessagesForSender = this.session.getUnconfirmedMessagesForSender();
+        Map<News, Integer> unsentMessages = this.session.getUnsentMessages();
+
+        if (unconfirmedMessages.size() > 0 || unconfirmedMessagesForSender.size() > 0 || unsentMessages.size() > 0)
+            log.info(String.format("Resume session need to send message:\n" +
+                            "\t[UnconfirmedMessagesForReceiver] %d, [UnconfirmedMessagesForSender] %d, [New Message] %d!",
+                    unconfirmedMessages.size(),
+                    unconfirmedMessagesForSender.size(), unsentMessages.size()));
+
         // 成功恢复会话的发送 unconfirmedMessages （此时服务端作为接收者，针对 qos2 消息）
-        for (Map.Entry<Integer, News> entry : this.session.getUnconfirmedMessages().entrySet()) {
+        for (Map.Entry<Integer, News> entry : unconfirmedMessages.entrySet()) {
             int messageId = entry.getKey();
             ctx.writeAndFlush(generatePublishVertify(ControlType.PUBREC, 0x00, messageId));
         }
         // 成功恢复会话的发送 unconfirmedMessagesForSender （此时服务端作为发送者，针对 qos1、2 消息）
-        for (Map.Entry<Integer, Pair<News, Integer>> entry : this.session.getUnconfirmedMessagesForSender().entrySet()) {
+        for (Map.Entry<Integer, Pair<News, Integer>> entry : unconfirmedMessagesForSender.entrySet()) {
             Integer messageId = entry.getKey();
             News news = entry.getValue().getF();
             int qos = entry.getValue().getS();
             ctx.writeAndFlush(generatePublish(true, qos, false, messageId, news));
         }
         // 成功恢复会话的发送
-        for (Map.Entry<News, Integer> entry : this.session.getUnsentMessages().entrySet()) {
+        for (Map.Entry<News, Integer> entry : unsentMessages.entrySet()) {
             News news = entry.getKey();
             int qos = entry.getValue();
             ctx.writeAndFlush(generatePublish(false, qos, false, generateMessageId(), news));
@@ -262,6 +288,12 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         List<String> topicFilters = subscribePayload.getTopicFilters();
         List<Integer> qoss = subscribePayload.getQoss();
 
+        assert this.session != null;
+        log.info(String.format("Get a subscribe, clientId:%s, subscribe:\n" +
+                        "\t[TopicFilters]%s, [Qoss]%s!",
+                this.session.getClientId(),
+                OtherUtil.listToString(topicFilters), OtherUtil.listToString(qoss)));
+
         // 生成 SUBACK
         Message subackMessage = new Message(ControlType.SUBACK, 0x00);
         subackMessage.setRemainLength(2 + topicFilters.size());
@@ -276,7 +308,6 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         for (int i = 0; i < topicFilters.size(); i++) {
             String topicFilter = topicFilters.get(i);
             int qos = qoss.get(i);
-            assert this.session != null;
             boolean result = subscribeTree.addTopicFilter(topicFilter, this.session, qos);
             if (!result)
                 subackPayload.addReturnCode((byte) 0x80);
@@ -287,19 +318,30 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         }
 
         // 响应，写 SUBACK message
+        log.info(String.format("Send a suback, username:%s, clientId:%s, suback:\n" +
+                        "\t[ReturnCodes]:%s, [messageId]:%d!",
+                this.session.getUserName(), this.session.getClientId(),
+                OtherUtil.listToString(subackPayload.getReturnCodes()), messageId));
         ctx.writeAndFlush(subackMessage);
 
         // 发布保留消息
         for (Map.Entry<String, News> entry : MqttBrokerBootstrap.retainNews.entrySet()) {
             String topicName = entry.getKey();
             int qos = -1;
+            String topicFilter = "";
             for (int i = 0; i < topicFilters.size(); i++) {
-                String topicFilter = topicFilters.get(i);
-                if (OtherUtil.topicMatchTopicFilter(topicName, topicFilter))
-                    qos = qoss.get(i) > qos ? qoss.get(i) : qos;
+                String tTopicFilter = topicFilters.get(i);
+                if (OtherUtil.topicMatchTopicFilter(topicName, tTopicFilter))
+                    if (qoss.get(i) > qos) {
+                        qos = qoss.get(i);
+                        topicFilter = tTopicFilter;
+                    }
             }
-            if (qos >= 0)
+            if (qos >= 0) {
+                log.info(String.format("Send retain message, clientId:%s, topicFilter:%s, topic:%s!",
+                        this.session.getClientId(), topicFilter, topicName));
                 ctx.writeAndFlush(generatePublish(false, qos, true, generateMessageId(), entry.getValue()));
+            }
         }
     }
 
@@ -310,10 +352,15 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         UnsubscribeVH unsubscribeVH = (UnsubscribeVH) msg.getVariableHeader();
         UnsubscribePayload unsubscribePayload = (UnsubscribePayload) msg.getPayload();
 
+        assert this.session != null;
+        log.info(String.format("Get a unsubscribe, clientId:%s, unsubscribe:\n" +
+                        "\t[TopicFilters]%s!",
+                this.session.getClientId(),
+                OtherUtil.listToString(unsubscribePayload.getTopicFilters())));
+
         // 根据报文内容删除部分订阅
         SubscribeTree subscribeTree = SubscribeTree.getInstance();
         for (String topicFilter : unsubscribePayload.getTopicFilters()) {
-            assert this.session != null;
             subscribeTree.removeTopicFilter(topicFilter, this.session);
             this.session.removeSubscribe(topicFilter);
         }
@@ -326,6 +373,8 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         msg.setVariableHeader(publishVerifyVH);
 
         // 响应
+        log.info(String.format("Send a unsuback, username:%s, clientId:%s, messageId:%d!",
+                this.session.getUserName(), this.session.getClientId(), unsubscribeVH.getMessageId()));
         ctx.writeAndFlush(unsuback);
     }
 
@@ -336,7 +385,13 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         Message pingresqMessage = new Message(ControlType.PINGRESP, 0x00);
         pingresqMessage.setRemainLength(0);
 
+        assert this.session != null;
+        log.info(String.format("Get a pingreq, username:%s, clientId:%s!",
+                this.session.getUserName(), this.session.getClientId()));
+
         // 响应
+        log.info(String.format("Send a pingresq, username:%s, clientId:%s!",
+                this.session.getUserName(), this.session.getClientId()));
         ctx.writeAndFlush(pingresqMessage);
     }
 
@@ -345,14 +400,15 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
      */
     private void processDisconnect(Message msg, ChannelHandlerContext ctx) {
         assert this.session != null;
-        if (msg.getFlag() != 0x00) {
-            log.error(String.format("Get a error in the flag of disconnect, username:%s, clientId:%s!", session.getUserName(), session.getClientId()));
-            return;
-        }
+        log.info(String.format("Get a disconnect, username:%s, clientId:%s!",
+                this.session.getUserName(), this.session.getClientId()));
+
         if (this.session.isCleanSessionFlag())
             MqttBrokerBootstrap.sessions.remove(session.getClientId());
         this.session.setWill(null);
-        ctx.close().addListener((ChannelFutureListener) future -> log.info(String.format("Normal Disconnect, username:%s, clientId:%s!", session.getUserName(), session.getClientId())));
+        ctx.close().addListener((ChannelFutureListener) future ->
+                log.info(String.format("Normal Disconnect, username:%s, clientId:%s!",
+                        session.getUserName(), session.getClientId())));
     }
 
     /*
@@ -367,19 +423,29 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         boolean isRetain = msg.isRetain();
         List<Byte> content = publishPayload.getContent();
 
+        assert this.session != null;
+        log.info(String.format("Get a publish, username:%s, clientId:%s, publish:\n" +
+                        "\t[TopicName]:%s, [Qos]:%d, [MessageId]:%s!",
+                this.session.getUserName(), this.session.getClientId(),
+                topicName, qos, qos == 0 ? "" : messageId));
+
         // 根据报文构建 news
         News news = new News(topicName, content, qos);
 
         // 保留消息处理
         if (isRetain) {
-            if (content.size() == 0)
+            if (content.size() == 0) {
                 // 清除已存保留消息
                 MqttBrokerBootstrap.retainNews.remove(topicName);
-            else
+                log.info(String.format("Delete a retain message, username:%s, clientId:%s, topicName:%s!",
+                        this.session.getUserName(), this.session.getClientId(), topicName));
+            } else {
+                // 保存新的保留消息
                 MqttBrokerBootstrap.retainNews.put(topicName, news);
+                log.info(String.format("Save a retain message, username:%s, clientId:%s, topicName:%s!",
+                        this.session.getUserName(), this.session.getClientId(), topicName));
+            }
         }
-
-        assert this.session != null;
 
         // 响应
         if (qos == 0x01) {
@@ -414,6 +480,9 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         publishVerifyVH.setMessageId(messageId);
 
         publishVertifyMessage.setVariableHeader(publishVerifyVH);
+
+        log.info(String.format("Send a %s, username:%s, clientId:%s, messageId:%d!",
+                CONTROL_TYPE_NAMES[controlType], this.session.getUserName(), this.session.getClientId(), messageId));
         return publishVertifyMessage;
     }
 
@@ -443,6 +512,11 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         publishMessage.setRemainLength(remainLength);
         publishMessage.setVariableHeader(publishVH);
         publishMessage.setPayload(publishPayload);
+
+        log.info(String.format("Send a publish, username:%s, clientId:%s, publish:\n" +
+                        "\t[TopicName]:%s, [Qos]:%s, [MessageId]:%s!",
+                this.session.getUserName(), this.session.getClientId(),
+                news.getTopic(), qos, qos == 0 ? "" : messageId));
         return publishMessage;
     }
 
@@ -480,6 +554,9 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         int messageId = publishVerifyVH.getMessageId();
 
         assert this.session != null;
+        log.info(String.format("Get a puback, username:%s, clientId:%s, messageId:%d!",
+                this.session.getUserName(), this.session.getClientId(), messageId));
+
         // 丢弃相应的消息
         this.session.removeUnconfirmedMessageForSender(messageId);
         // 释放相应的报文标识符
@@ -494,6 +571,9 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         int messageId = publishVerifyVH.getMessageId();
 
         assert this.session != null;
+        log.info(String.format("Get a pubrec, username:%s, clientId:%s, messageId:%d!",
+                this.session.getUserName(), this.session.getClientId(), messageId));
+
         // 丢弃相应的消息
         this.session.removeUnconfirmedMessageForSender(messageId);
 
@@ -506,11 +586,14 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
      * 处理 PUBREL
      */
     private void processPubrel(Message msg, ChannelHandlerContext ctx) {
-        assert this.session != null;
-
         // 发布对应的 qos2 消息
         PublishVerifyVH publishVerifyVH = (PublishVerifyVH) msg.getVariableHeader();
         int messageId = publishVerifyVH.getMessageId();
+
+        assert this.session != null;
+        log.info(String.format("Get a pubrel, username:%s, clientId:%s, messageId:%d!",
+                this.session.getUserName(), this.session.getClientId(), messageId));
+
         News news = this.session.getUnconfirmedMessage(messageId);
         if (news != null)
             sendPublish(generateMessageId(), news);
@@ -540,10 +623,12 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
      * 处理 PUBCOMP
      */
     private void processPubcomp(Message msg, ChannelHandlerContext ctx) {
-        assert this.session != null;
-
         PublishVerifyVH publishVerifyVH = (PublishVerifyVH) msg.getVariableHeader();
         int messageId = publishVerifyVH.getMessageId();
+
+        assert this.session != null;
+        log.info(String.format("Get a pubcomp, username:%s, clientId:%s, messageId:%d!",
+                this.session.getUserName(), this.session.getClientId(), messageId));
 
         // 释放相应的报文标识符
         this.session.removeUnconfirmedMessageForSender(messageId);

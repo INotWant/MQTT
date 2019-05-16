@@ -23,4 +23,22 @@ public final class ControlType {
     public final static int PINGRESP = 13;
     public final static int DISCONNECT = 14;
 
+    public final static String[] CONTROL_TYPE_NAMES = {
+      "reserved",
+      "connect",
+      "connack",
+      "publish",
+      "puback",
+      "pubrec",
+      "pubrel",
+      "pubcomp",
+      "subscribe",
+      "suback",
+      "unsubscribe",
+      "unsuback",
+      "pingreq",
+      "pingresp",
+      "disconnect",
+    };
+
 }

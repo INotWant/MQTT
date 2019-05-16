@@ -1,6 +1,10 @@
 package mqtt.logic;
 
-import io.netty.channel.*;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 import mqtt.MqttBrokerBootstrap;
@@ -80,10 +84,9 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
 
         if (this.session != null)
             this.session.setLastReqTime(System.currentTimeMillis());
-        if (msg.getControlType() != ControlType.DISCONNECT) {
+        if (msg.getControlType() != ControlType.DISCONNECT)
             // keep alive
-            this.future = createKeepAliveTimer(ctx.channel(), (int) (session.getKeepAlive() * 1.5));
-        }
+            this.future = createKeepAliveTimer(ctx.channel(), (int) Math.ceil(session.getKeepAlive() * 1.5));
     }
 
     @Override
@@ -93,26 +96,31 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         cause.printStackTrace();
 
         if (cause instanceof UnknownControlTypeException) {
-            ChannelFuture channelFuture = ctx.close();
-            channelFuture.addListener((ChannelFutureListener) future ->
-                    log.error("Close, because of unknown control type!")
-            );
+            ctx.writeAndFlush(Unpooled.EMPTY_BUFFER)
+                    .addListener(ChannelFutureListener.CLOSE)
+                    .addListener((ChannelFutureListener) future ->
+                            log.error("Close, because of unknown control type!")
+                    );
         } else if (cause instanceof IllegalStateException) {
             IllegalStateException exp = (IllegalStateException) cause;
             log.info(String.format("Send a connack, error:%x!", exp.getErrorno()));
             ctx.writeAndFlush(generateConnackMessage(0, exp.getErrorno())).
-                    addListener((ChannelFutureListener) future -> ctx.close().addListener((ChannelFutureListener) f ->
-                            log.error(String.format("Close, because of illegal state: %x!", exp.getErrorno()))));
+                    addListener((ChannelFutureListener) future ->
+                            ctx.writeAndFlush(Unpooled.EMPTY_BUFFER)
+                                    .addListener(ChannelFutureListener.CLOSE)
+                                    .addListener((ChannelFutureListener) f ->
+                                            log.error(String.format("Close, because of illegal state: %x!", exp.getErrorno()))));
         } else if (cause instanceof MessageFormatException) {
-            ChannelFuture channelFuture = ctx.close();
-            channelFuture.addListener((ChannelFutureListener) future ->
-                    log.error("Close, because of message format exception!")
-            );
+            ctx.writeAndFlush(Unpooled.EMPTY_BUFFER)
+                    .addListener(ChannelFutureListener.CLOSE)
+                    .addListener((ChannelFutureListener) future ->
+                            log.error("Close, because of message format exception!")
+                    );
         }
     }
 
     @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+    public void channelInactive(ChannelHandlerContext ctx) {
         /*
          * 在此方法中统一做如下事：
          * 1）清理非保留 session;
@@ -121,10 +129,13 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
 
         if (this.session != null) {
             Will will = this.session.getWill();
-            if (will != null)
+            if (will != null) {
                 // 客户端未发送 DISCONNECT 直接关闭了网络连接，发布遗嘱
                 // 获取其他异常关闭连接且 will 仍存在的情况
+                log.info(String.format("Send a will, clientId:%s, TopicName:%s!",
+                        this.session.getClientId(), will.getWillNews().getTopic()));
                 sendPublish(generateMessageId(), will.getWillNews());
+            }
             // 清理非保留会话
             if (this.session.isCleanSessionFlag())
                 MqttBrokerBootstrap.sessions.remove(this.session.getClientId());
@@ -271,10 +282,12 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
      */
     private ScheduledFuture createKeepAliveTimer(final Channel channel, int keepAlive) {
         return channel.eventLoop().schedule(() -> {
-            ChannelFuture channelFuture = channel.closeFuture();
-            channelFuture.addListener((ChannelFutureListener) future ->
-                    log.error(String.format("Close, because of timeout(keep alive), username:%s, clientId:%s!", session.getUserName(), session.getClientId()))
-            );
+            // close 逻辑
+            channel.writeAndFlush(Unpooled.EMPTY_BUFFER)
+                    .addListener(ChannelFutureListener.CLOSE)
+                    .addListener((ChannelFutureListener) future ->
+                            log.error(String.format("Close, because of timeout(keep alive), username:%s, clientId:%s!", session.getUserName(), session.getClientId()))
+                    );
         }, keepAlive, TimeUnit.SECONDS);
     }
 
@@ -406,9 +419,11 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         if (this.session.isCleanSessionFlag())
             MqttBrokerBootstrap.sessions.remove(session.getClientId());
         this.session.setWill(null);
-        ctx.close().addListener((ChannelFutureListener) future ->
-                log.info(String.format("Normal Disconnect, username:%s, clientId:%s!",
-                        session.getUserName(), session.getClientId())));
+        ctx.writeAndFlush(Unpooled.EMPTY_BUFFER)
+                .addListener(ChannelFutureListener.CLOSE)
+                .addListener((ChannelFutureListener) future ->
+                        log.info(String.format("Normal Disconnect, username:%s, clientId:%s!",
+                                session.getUserName(), session.getClientId())));
     }
 
     /*

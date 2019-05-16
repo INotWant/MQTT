@@ -24,7 +24,7 @@ public final class ParseMessage {
      * @param bytes   报文字节流
      */
     public static void parseMessage(Message message, byte[] bytes) throws UnknownControlTypeException, MessageFormatException, IllegalStateException {
-        byte controlType = message.getControlType();
+        int controlType = message.getControlType();
         switch (controlType) {
             case ControlType.CONNECT:
                 parseConnect(message, bytes);
@@ -59,7 +59,7 @@ public final class ParseMessage {
      * 解析 CONNECT 报文
      */
     private static void parseConnect(Message message, byte[] bytes) throws MessageFormatException, IllegalStateException {
-        int index = 1 + ByteUtil.getRemainLengthLen(message.getRemainLength());
+        int index = 0;
 
         // 可变报头
         ConnectVH connectVH = new ConnectVH();
@@ -140,7 +140,7 @@ public final class ParseMessage {
      * 解析 PUBLISH 报文
      */
     private static void parsePublish(Message message, byte[] bytes) {
-        int index = 1 + ByteUtil.getRemainLengthLen(message.getRemainLength());
+        int index = 0;
 
         // 可变报头
         PublishVH publishVH = new PublishVH();
@@ -148,15 +148,18 @@ public final class ParseMessage {
         index += 2;
         publishVH.setTopicName(ByteUtil.getStringFromBytes(bytes, index, topicLen));
         index += topicLen;
-        publishVH.setMessageId(ByteUtil.twoByteToInt(bytes[index], bytes[index + 1]));
-        index += 2;
+        if (message.getQos() > 0) {
+            publishVH.setMessageId(ByteUtil.twoByteToInt(bytes[index], bytes[index + 1]));
+            index += 2;
+        }
+
         message.setVariableHeader(publishVH);
 
         // 有效载荷
         PublishPayload publishPayload = new PublishPayload();
         List<Byte> content = new ArrayList<>();
         for (int i = index; i < bytes.length; i++)
-            content.add(bytes[index]);
+            content.add(bytes[i]);
         publishPayload.setContent(content);
         index = bytes.length;
         message.setPayload(publishPayload);
@@ -175,7 +178,7 @@ public final class ParseMessage {
                 throw new MessageFormatException("pubrel message's fixed header, flag error");
 
         PublishVerifyVH publishVerifyVH = new PublishVerifyVH();
-        publishVerifyVH.setMessageId(ByteUtil.twoByteToInt(bytes[2], bytes[3]));
+        publishVerifyVH.setMessageId(ByteUtil.twoByteToInt(bytes[0], bytes[1]));
         message.setVariableHeader(publishVerifyVH);
     }
 
@@ -186,7 +189,7 @@ public final class ParseMessage {
         if (message.getFlag() != 0x02)
             throw new MessageFormatException("subscribe message's fixed header, flag error");
 
-        int index = 1 + ByteUtil.getRemainLengthLen(message.getRemainLength());
+        int index = 0;
 
         // 可变报头
         SubscribeVH subscribeVH = new SubscribeVH();
@@ -204,7 +207,7 @@ public final class ParseMessage {
             index += 2;
             topicFilters.add(ByteUtil.getStringFromBytes(bytes, index, topicFilterLen));
             index += topicFilterLen;
-            if (bytes[index] >> 2 != 0)
+            if (bytes[index] >>> 2 != 0)
                 throw new MessageFormatException("subscribe message's payload, reserved error");
             int qos = bytes[index] & 0x03;
             if (qos > 2)
@@ -224,7 +227,7 @@ public final class ParseMessage {
         if (message.getFlag() != 0x02)
             throw new MessageFormatException("subscribe message's fixed header, flag error");
 
-        int index = 1 + ByteUtil.getRemainLengthLen(message.getRemainLength());
+        int index = 0;
 
         // 可变报头
         UnsubscribeVH unsubscribeVH = new UnsubscribeVH();

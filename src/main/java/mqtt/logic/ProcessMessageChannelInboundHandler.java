@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
-import static mqtt.MqttConfig.DEFAULT_KEEP_ALIVE;
+import static mqtt.MqttConfig.KEEP_ALIVE;
 
 /**
  * @author iwant
@@ -79,15 +79,17 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
 
         if (this.session != null)
             this.session.setLastReqTime(System.currentTimeMillis());
-        if (msg.getControlType() != ControlType.DISCONNECT)
+        if (msg.getControlType() != ControlType.DISCONNECT) {
             // keep alive
-            this.future = createKeepAliveTimer(ctx.channel(), session.getKeepAlive());
+            this.future = createKeepAliveTimer(ctx.channel(), (int) (session.getKeepAlive() * 1.5));
+        }
     }
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         // 打印捕获的异常
         log.error("Get a exception: " + cause.toString());
+        cause.printStackTrace();
 
         if (cause instanceof UnknownControlTypeException) {
             ChannelFuture channelFuture = ctx.close();
@@ -96,9 +98,9 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
             );
         } else if (cause instanceof IllegalStateException) {
             IllegalStateException exp = (IllegalStateException) cause;
-            ctx.writeAndFlush(getConnackMessage(0, exp.getErrorno())).
+            ctx.writeAndFlush(generateConnackMessage(0, exp.getErrorno())).
                     addListener((ChannelFutureListener) future -> ctx.close().addListener((ChannelFutureListener) f ->
-                            log.error("Close, because of illegal state: %x!", exp.getErrorno())));
+                            log.error(String.format("Close, because of illegal state: %x!", exp.getErrorno()))));
         } else if (cause instanceof MessageFormatException) {
             ChannelFuture channelFuture = ctx.close();
             channelFuture.addListener((ChannelFutureListener) future ->
@@ -153,7 +155,7 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
             session.setCleanSessionFlag(connectVH.isCleanSessionFlag());
             int keepAlive = connectVH.getKeepAlive();
             if (keepAlive == 0)
-                keepAlive = DEFAULT_KEEP_ALIVE;
+                keepAlive = KEEP_ALIVE;
             session.setKeepAlive(keepAlive);
             if (connectVH.isUserNameFlag())
                 session.setUserName(connectPayload.getUserName());
@@ -204,7 +206,7 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         this.session = session;
 
         // 生成并发送 CONNACK 响应
-        Message connackMessage = getConnackMessage(sp, 0x00);
+        Message connackMessage = generateConnackMessage(sp, 0x00);
         ctx.writeAndFlush(connackMessage);
 
         // 成功恢复会话的发送 unconfirmedMessages （此时服务端作为接收者，针对 qos2 消息）
@@ -230,9 +232,10 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
     /*
      * 生成 CONNACK 报文
      */
-    private Message getConnackMessage(int sp, int stateCode) {
+    private Message generateConnackMessage(int sp, int stateCode) {
         Message connackMessage = new Message(ControlType.CONNACK, 0x00);
         connackMessage.setRemainLength(2);
+
         connackMessage.setVariableHeader(new ConnackVH(sp, stateCode));
         return connackMessage;
     }
@@ -244,7 +247,7 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
         return channel.eventLoop().schedule(() -> {
             ChannelFuture channelFuture = channel.closeFuture();
             channelFuture.addListener((ChannelFutureListener) future ->
-                    log.error("Close, because of timeout(keep alive), username:%s, clientId:%s!", session.getUserName(), session.getClientId())
+                    log.error(String.format("Close, because of timeout(keep alive), username:%s, clientId:%s!", session.getUserName(), session.getClientId()))
             );
         }, keepAlive, TimeUnit.SECONDS);
     }
@@ -343,13 +346,13 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
     private void processDisconnect(Message msg, ChannelHandlerContext ctx) {
         assert this.session != null;
         if (msg.getFlag() != 0x00) {
-            log.error("Get a error in the flag of disconnect, username:%s, clientId:%s!", session.getUserName(), session.getClientId());
+            log.error(String.format("Get a error in the flag of disconnect, username:%s, clientId:%s!", session.getUserName(), session.getClientId()));
             return;
         }
         if (this.session.isCleanSessionFlag())
             MqttBrokerBootstrap.sessions.remove(session.getClientId());
         this.session.setWill(null);
-        ctx.close().addListener((ChannelFutureListener) future -> log.info("Normal Disconnect, username:%s, clientId:%s!", session.getUserName(), session.getClientId()));
+        ctx.close().addListener((ChannelFutureListener) future -> log.info(String.format("Normal Disconnect, username:%s, clientId:%s!", session.getUserName(), session.getClientId())));
     }
 
     /*
@@ -405,8 +408,12 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
      */
     private Message generatePublishVertify(int controlType, int flag, int messageId) {
         Message publishVertifyMessage = new Message(controlType, flag);
+        publishVertifyMessage.setRemainLength(2);
+
         PublishVerifyVH publishVerifyVH = new PublishVerifyVH();
         publishVerifyVH.setMessageId(messageId);
+
+        publishVertifyMessage.setVariableHeader(publishVerifyVH);
         return publishVertifyMessage;
     }
 
@@ -416,13 +423,26 @@ public class ProcessMessageChannelInboundHandler extends SimpleChannelInboundHan
     private Message generatePublish(boolean isDup, int qos, boolean isRetain, int messageId, News news) {
         Message publishMessage = new Message(ControlType.PUBLISH, 0x00);
         publishMessage.setDup(isDup);
-        publishMessage.setQos(Math.min(news.getQos(), qos));
+        qos = Math.min(news.getQos(), qos);
+        publishMessage.setQos(qos);
         publishMessage.setRetain(isRetain);
+
         PublishVH publishVH = new PublishVH();
         publishVH.setTopicName(news.getTopic());
-        publishVH.setMessageId(messageId);
+        if (publishMessage.getQos() > 0)
+            publishVH.setMessageId(messageId);
+
         PublishPayload publishPayload = new PublishPayload();
         publishPayload.setContent(news.getContent());
+
+        int remainLength;
+        if (publishMessage.getQos() == 0)
+            remainLength = 2 + news.getTopic().getBytes().length + news.getContent().size();
+        else
+            remainLength = 2 + news.getTopic().getBytes().length + 2 + news.getContent().size();
+        publishMessage.setRemainLength(remainLength);
+        publishMessage.setVariableHeader(publishVH);
+        publishMessage.setPayload(publishPayload);
         return publishMessage;
     }
 

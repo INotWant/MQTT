@@ -31,7 +31,7 @@ public class MqttBytesToMessageDecoder extends ByteToMessageDecoder {
      */
     @Override
     protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws MessageFormatException, UnknownControlTypeException, IllegalStateException {
-        if (remainLength == -1) {
+        if (this.remainLength == -1) {
             if (in.readableBytes() >= 2) {
                 // 获取 remain length 字段的长度
                 int len = 1;

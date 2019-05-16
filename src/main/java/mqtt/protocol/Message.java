@@ -22,15 +22,15 @@ public class Message {
     }
 
     public Message(int controlType, int flag) {
-        this.controlAndFlag = (byte) (((controlType & 0xf) << 4) + (flag & 0xf));
+        setControlAndFlag(controlType, flag);
     }
 
-    public byte getControlAndFlag() {
+    public int getControlAndFlag() {
         return controlAndFlag;
     }
 
     public void setControlAndFlag(int controlType, int flag) {
-        this.controlAndFlag = (byte) (((controlType & 0xf) << 4) + (flag & 0xf));
+        this.controlAndFlag = (byte) (((controlType & 0x0f) << 4) + (flag & 0x0f));
     }
 
     public void setControlAndFlag(byte controlAndFlag) {
@@ -40,29 +40,29 @@ public class Message {
     /**
      * 获取报文控制类型
      */
-    public byte getControlType() {
-        return (byte) (this.controlAndFlag >> 4);
+    public int getControlType() {
+        return (this.controlAndFlag & 0xff) >>> 4;
     }
 
     /**
      * 设置报文控制类型
      */
     public void setControlType(int controlType) {
-        this.controlAndFlag = (byte) (this.controlAndFlag & 0xf + ((controlType & 0xf) << 4));
+        this.controlAndFlag = (byte) ((this.controlAndFlag & 0xff & 0x0f) + ((controlType & 0x0f) << 4));
     }
 
     /**
      * 获取标志位
      */
-    public byte getFlag() {
-        return (byte) (this.controlAndFlag & 0xf);
+    public int getFlag() {
+        return this.controlAndFlag & 0xff & 0x0f;
     }
 
     /**
      * 设置标志位
      */
     public void setFlag(int flag) {
-        this.controlAndFlag = (byte) (this.controlAndFlag & 0xf0 + (flag & 0xf));
+        this.controlAndFlag = (byte) ((this.controlAndFlag & 0xff & 0xf0) + (flag & 0x0f));
     }
 
     public int getRemainLength() {
@@ -99,15 +99,17 @@ public class Message {
      * 获取 QOS
      */
     public int getQos() {
-        return (getFlag() >> 1) & 0x03;
+        return (getFlag() & 0x06) >>> 1;
     }
 
     /**
      * 设置 QOS
      */
     public void setQos(int qos) {
-        if (qos >= 0 && qos <= 2)
-            setFlag((getFlag() & ~0x06) + (qos << 1));
+        if (qos >= 0 && qos <= 2) {
+            int flag = (getFlag() & ~0x06) + (qos << 1);
+            setFlag(flag);
+        }
     }
 
     /**

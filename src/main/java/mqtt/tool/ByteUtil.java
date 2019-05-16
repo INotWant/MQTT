@@ -18,7 +18,7 @@ public final class ByteUtil {
      * @return 1 or 0
      */
     public static int getSpecialBinaryBit(int optNum, int pos) {
-        return (optNum >> pos) & 0x1;
+        return (optNum >>> pos) & 0x1;
     }
 
     /**
@@ -77,7 +77,7 @@ public final class ByteUtil {
      * @param lsb 第有效位
      */
     public static int twoByteToInt(byte msb, byte lsb) {
-        return (msb << 8) + lsb;
+        return ((msb & 0xff) << 8) + (lsb & 0xff);
     }
 
     /**

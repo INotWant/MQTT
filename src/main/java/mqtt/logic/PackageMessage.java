@@ -1,6 +1,8 @@
 package mqtt.logic;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.util.internal.logging.InternalLogger;
+import io.netty.util.internal.logging.InternalLoggerFactory;
 import mqtt.exception.UnknownControlTypeException;
 import mqtt.protocol.*;
 import mqtt.tool.ByteUtil;
@@ -14,6 +16,8 @@ import java.nio.charset.Charset;
  */
 public final class PackageMessage {
 
+    private static final InternalLogger log = InternalLoggerFactory.getInstance(PackageMessage.class);
+
     /**
      * 封包 {@link Message}
      *
@@ -22,7 +26,7 @@ public final class PackageMessage {
      * @throws UnknownControlTypeException 未知控制报文类型异常
      */
     public static void packageMessage(Message message, ByteBuf byteBuf) throws UnknownControlTypeException {
-        byte controlType = message.getControlType();
+        int controlType = message.getControlType();
         switch (controlType) {
             case ControlType.CONNACK:
                 packageConnack(message, byteBuf);
@@ -68,12 +72,14 @@ public final class PackageMessage {
 
         PublishVH publishVH = (PublishVH) message.getVariableHeader();
         int topicNameLen = publishVH.getTopicName().length();
-        byteBuf.writeByte(topicNameLen >> 8);
+        byteBuf.writeByte(topicNameLen >>> 8);
         byteBuf.writeByte(topicNameLen);
         byteBuf.writeBytes(publishVH.getTopicName().getBytes(Charset.forName("UTF-8")));
-        int messageId = publishVH.getMessageId();
-        byteBuf.writeByte(messageId >> 8);
-        byteBuf.writeByte(messageId);
+        if (message.getQos() > 0) {
+            int messageId = publishVH.getMessageId();
+            byteBuf.writeByte(messageId >>> 8);
+            byteBuf.writeByte(messageId);
+        }
 
         PublishPayload publishPayload = (PublishPayload) message.getPayload();
         for (byte b : publishPayload.getContent())
@@ -89,7 +95,7 @@ public final class PackageMessage {
 
         PublishVerifyVH publishVerifyVH = (PublishVerifyVH) message.getVariableHeader();
         int messageId = publishVerifyVH.getMessageId();
-        byteBuf.writeByte(messageId >> 8);
+        byteBuf.writeByte(messageId >>> 8);
         byteBuf.writeByte(messageId);
     }
 
@@ -102,7 +108,7 @@ public final class PackageMessage {
 
         SubackVH subackVH = (SubackVH) message.getVariableHeader();
         int messageId = subackVH.getMessageId();
-        byteBuf.writeByte(messageId >> 8);
+        byteBuf.writeByte(messageId >>> 8);
         byteBuf.writeByte(messageId);
 
         SubackPayload subackPayload = (SubackPayload) message.getPayload();
